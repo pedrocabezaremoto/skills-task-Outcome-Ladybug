@@ -1,0 +1,117 @@
+diff --git a/log/formatters.go b/log/formatters.go
+index 5cc1ca41..1cb6c9b4 100644
+--- a/log/formatters.go
++++ b/log/formatters.go
+@@ -1,10 +1,85 @@
+ package log
+ 
+ import (
++	"io"
++	"sync"
+ 	"strings"
+ 	"time"
+ )
+ 
++// CRLFWriterWrapper normalizes log output for Windows-style text readers.
++type CRLFWriterWrapper struct {
++	Writer      io.Writer
++	InsertedCRs int
++
++	mu        sync.Mutex
++	lastWasCR bool
++}
++
++// CRLFWriter wraps w with CRLF normalization while preserving existing CRLF sequences.
++func CRLFWriter(w io.Writer) io.Writer {
++	return &CRLFWriterWrapper{Writer: w}
++}
++
++func (w *CRLFWriterWrapper) Write(p []byte) (int, error) {
++	if len(p) == 0 {
++		return 0, nil
++	}
++
++	w.mu.Lock()
++	defer w.mu.Unlock()
++
++	out := make([]byte, 0, len(p)*2)
++	cumulative := make([]int, len(p))
++
++	for i, b := range p {
++		switch b {
++		case 0:
++			out = append(out, '?')
++			w.lastWasCR = false
++		case '\n':
++			if !w.lastWasCR {
++				out = append(out, '\r')
++				w.InsertedCRs++
++			}
++			out = append(out, '\n')
++			w.lastWasCR = false
++		case '\r':
++			out = append(out, '\r')
++			w.lastWasCR = true
++		default:
++			out = append(out, b)
++			w.lastWasCR = false
++		}
++		cumulative[i] = len(out)
++	}
++
++	written, err := w.Writer.Write(out)
++	if err == nil && written != len(out) {
++		err = io.ErrShortWrite
++	}
++	if err != nil {
++		return consumedInputBytes(cumulative, written), err
++	}
++
++	return len(p), nil
++}
++
++func consumedInputBytes(cumulative []int, written int) int {
++	if written <= 0 {
++		return 0
++	}
++
++	consumed := 0
++	for _, total := range cumulative {
++		if total > written {
++			break
++		}
++		consumed++
++	}
++	return consumed
++}
++
+ func ShortDur(d time.Duration) string {
+ 	var s string
+ 	switch {
+diff --git a/log/log.go b/log/log.go
+index fdb29595..91032003 100644
+--- a/log/log.go
++++ b/log/log.go
+@@ -4,6 +4,7 @@ import (
+ 	"context"
+ 	"errors"
+ 	"fmt"
++	"io"
+ 	"net/http"
+ 	"os"
+ 	"reflect"
+@@ -153,6 +154,14 @@ func SetDefaultLogger(l *logrus.Logger) {
+ 	defaultLogger = l
+ }
+ 
++func SetOutput(w io.Writer) {
++	if runtime.GOOS == "windows" {
++		w = CRLFWriter(w)
++	}
++	defaultLogger.SetOutput(w)
++	logrus.SetOutput(w)
++}
++
+ func CurrentLevel() Level {
+ 	return currentLevel
+ }

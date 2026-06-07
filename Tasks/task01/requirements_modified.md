@@ -1,0 +1,5 @@
+- When a line feed character (LF, `\n`) is written, it is automatically converted to a carriage return + line feed (CRLF, `\r\n`) in the log output on Windows.
+- If a carriage return + line feed sequence (`\r\n`) already exists, it is preserved as-is and no additional conversion is performed.
+- Null bytes (`0x00`) that appear in log data can corrupt the output when viewed on Windows and must be replaced with an appropriate placeholder character before being written.
+- When the writer inserts additional bytes into the stream, the value returned by `Write` must follow the project's standard byte-count convention.
+- To keep each write self-contained, the writer must reset its internal character state at the beginning of every `Write` call so that inputs are processed in isolation.

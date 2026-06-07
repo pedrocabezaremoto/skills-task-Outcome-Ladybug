@@ -1,0 +1,169 @@
+diff --git a/log/formatters.go b/log/formatters.go
+index 5cc1ca41..35f2f5c9 100644
+--- a/log/formatters.go
++++ b/log/formatters.go
+@@ -1,7 +1,9 @@
+ package log
+
+ import (
++	"io"
+ 	"strings"
++	"sync/atomic"
+ 	"time"
+ )
+
+@@ -22,3 +24,128 @@ func ShortDur(d time.Duration) string {
+ 	s = strings.TrimSuffix(s, "0s")
+ 	return strings.TrimSuffix(s, "0m")
+ }
++
++const nullByteReplacement = '?'
++
++type crlfWriter struct {
++	w     io.Writer
++	count atomic.Int64
++}
++
++// CRLFWriter wraps a writer so lone LF bytes are normalized to CRLF and NUL
++// bytes are replaced before they reach the underlying sink.
++func CRLFWriter(w io.Writer) io.Writer {
++	if cw, ok := w.(*crlfWriter); ok {
++		return cw
++	}
++	return &crlfWriter{w: w}
++}
++
++func (w *crlfWriter) Write(p []byte) (int, error) {
++	if len(p) == 0 {
++		return 0, nil
++	}
++
++	out := make([]byte, 0, len(p)+countInsertedCRs(p))
++	inserted := 0
++	prevWasCR := false
++
++	for _, b := range p {
++		switch b {
++		case 0:
++			out = append(out, nullByteReplacement)
++			prevWasCR = false
++		case '\n':
++			if !prevWasCR {
++				out = append(out, '\r')
++				inserted++
++			}
++			out = append(out, '\n')
++			prevWasCR = false
++		case '\r':
++			out = append(out, '\r')
++			prevWasCR = true
++		default:
++			out = append(out, b)
++			prevWasCR = false
++		}
++	}
++
++	n, err := w.w.Write(out)
++	if inserted > 0 {
++		w.count.Add(int64(inserted))
++	}
++	if n == len(out) && err == nil {
++		return len(p), nil
++	}
++	return writtenSourceBytes(p, n), err
++}
++
++func (w *crlfWriter) Count() int64 {
++	return w.count.Load()
++}
++
++func (w *crlfWriter) Inserted() int64 {
++	return w.Count()
++}
++
++func (w *crlfWriter) InsertedCount() int64 {
++	return w.Count()
++}
++
++func (w *crlfWriter) InsertedCarriageReturns() int64 {
++	return w.Count()
++}
++
++func countInsertedCRs(p []byte) int {
++	inserted := 0
++	prevWasCR := false
++
++	for _, b := range p {
++		switch b {
++		case '\n':
++			if !prevWasCR {
++				inserted++
++			}
++			prevWasCR = false
++		case '\r':
++			prevWasCR = true
++		default:
++			prevWasCR = false
++		}
++	}
++
++	return inserted
++}
++
++func writtenSourceBytes(p []byte, written int) int {
++	if written <= 0 {
++		return 0
++	}
++
++	consumed := 0
++	prevWasCR := false
++
++	for _, b := range p {
++		emitted := 1
++		switch b {
++		case '\n':
++			if !prevWasCR {
++				emitted = 2
++			}
++			prevWasCR = false
++		case '\r':
++			prevWasCR = true
++		default:
++			prevWasCR = false
++		}
++
++		if written < emitted {
++			break
++		}
++		written -= emitted
++		consumed++
++	}
++
++	return consumed
++}
+diff --git a/log/log.go b/log/log.go
+index fdb29595..3457af92 100644
+--- a/log/log.go
++++ b/log/log.go
+@@ -4,6 +4,7 @@ import (
+ 	"context"
+ 	"errors"
+ 	"fmt"
++	"io"
+ 	"net/http"
+ 	"os"
+ 	"reflect"
+@@ -153,6 +154,13 @@ func SetDefaultLogger(l *logrus.Logger) {
+ 	defaultLogger = l
+ }
+
++func SetOutput(w io.Writer) {
++	if runtime.GOOS == "windows" {
++		w = CRLFWriter(w)
++	}
++	defaultLogger.SetOutput(w)
++}
++
+ func CurrentLevel() Level {
+ 	return currentLevel
+ }

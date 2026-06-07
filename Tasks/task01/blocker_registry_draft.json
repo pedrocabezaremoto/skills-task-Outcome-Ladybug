@@ -1,0 +1,70 @@
+{
+  "blockers": [
+    {
+      "id": "null_byte_replacement",
+      "type": "missing_parameter",
+      "area_of_obstruction": "requirements",
+      "description": "A requirement states that null bytes can corrupt log files when viewed on Windows and must be replaced before being written, but it does not specify which character the null byte should be replaced with. What replacement character must be used?",
+      "resolution": "Each null byte (0x00) must be replaced with exactly one question-mark character '?' (ASCII 0x3F) in the output. Example: writing the bytes h, 0x00, i must produce \"h?i\". Counter-example: do not drop the null byte (producing \"hi\") and do not use a space or any other symbol.",
+      "trigger_questions": [
+        "What character should be used to replace null bytes in the output?",
+        "Is there a specific ASCII symbol expected for the 0x00 replacement?",
+        "Should null bytes be dropped or replaced with a specific character?",
+        "Which exact character represents a null byte in the formatted log?"
+      ]
+    },
+    {
+      "id": "write_return_byte_count",
+      "type": "missing_parameter",
+      "area_of_obstruction": "requirements",
+      "description": "The writer may insert extra carriage-return bytes into the output, but the requirements do not state what integer the Write method must return in that case. Should the returned count reflect the input bytes consumed or the bytes actually written to the underlying writer?",
+      "resolution": "Write must return the number of INPUT bytes consumed from the slice p (the length of the input that was processed), NOT the number of bytes written to the underlying writer. Example: writing \"hello\\nworld\\nagain\\n\" (18 input bytes) must return n=18, even though 21 bytes (including the inserted \\r) reach the underlying writer. Counter-example: do not return 21.",
+      "trigger_questions": [
+        "Should Write return the number of input bytes or the number of bytes written downstream?",
+        "What value must n be when extra carriage returns are inserted?",
+        "Does the returned count include the injected \\r bytes?",
+        "How is the byte count calculated for the Write return value?"
+      ]
+    },
+    {
+      "id": "inserted_cr_counter_field",
+      "type": "missing_parameter",
+      "area_of_obstruction": "interfaces",
+      "description": "The interface indicates the writer should expose a counter of how many carriage-return bytes it inserts, for telemetry, but the exact exported field name and its type are not provided. How must this counter be declared and updated?",
+      "resolution": "The writer returned by CRLFWriter must be backed by an EXPORTED concrete type named exactly 'CRLFWriterWrapper' (CRLFWriter still returns io.Writer, so consumers type-assert to *CRLFWriterWrapper). That type must expose an EXPORTED field named exactly 'InsertedCRs' of type int, incremented by 1 each time a '\\r' is inserted before a '\\n'. Example: cw := CRLFWriter(buf).(*CRLFWriterWrapper); after writing \"a\\nb\\n\", cw.InsertedCRs == 2. Counter-example: do not name the field 'Count'/'CRCount' nor make the type or field unexported.",
+      "trigger_questions": [
+        "What should the carriage-return counter field be named exactly?",
+        "What is the exported field name and type for tracking inserted CRs?",
+        "How should the telemetry counter for inserted \\r be declared?",
+        "Which property exposes the number of carriage returns added?"
+      ]
+    },
+    {
+      "id": "bare_cr_handling",
+      "type": "ambiguous_requirement",
+      "area_of_obstruction": "requirements",
+      "description": "The requirements specify how to convert LF to CRLF and how to preserve an existing CRLF sequence, but they do not define what happens to a carriage return (\\r) that is NOT followed by a line feed. How should a standalone \\r be written to the output?",
+      "resolution": "A standalone carriage return (a \\r that is not immediately followed by \\n) must be written through to the underlying writer unchanged, byte-for-byte. Do NOT strip it and do NOT convert it into \\r\\n. Example: Write(\"a\\rb\") must produce exactly \"a\\rb\" (3 bytes). Counter-example: do not produce \"ab\" (stripped) nor \"a\\r\\nb\" (converted).",
+      "trigger_questions": [
+        "How should a standalone carriage return that is not followed by a line feed be handled?",
+        "Should a bare \\r be stripped, preserved, or converted to \\r\\n?",
+        "What is the exact rule for a \\r byte without a matching \\n?",
+        "Do lone carriage returns get written to the output as-is?"
+      ]
+    },
+    {
+      "id": "cross_call_state_persistence",
+      "type": "contradictory_requirement",
+      "area_of_obstruction": "problem_statement, requirements",
+      "description": "The problem statement requires the conversion to work even when logs are written in multiple steps, while a requirement states that the writer must reset its character state at the start of each Write call to isolate inputs. These two statements cannot both hold. Which one governs the handling of state between Write calls?",
+      "resolution": "The state (the last byte seen) MUST persist across separate Write calls; it must NOT be reset at the start of each Write. Example: Write(\"hello\\r\") followed by Write(\"\\nworld\\n\") must produce \"hello\\r\\nworld\\r\\n\", because the \\r from the first call suppresses inserting a second \\r for the \\n at the start of the second call. Counter-example: resetting state would wrongly produce \"hello\\r\\r\\nworld\\r\\n\".",
+      "trigger_questions": [
+        "Should the last-byte state be preserved or reset at the start of each Write call?",
+        "Which instruction takes precedence regarding state between Write calls?",
+        "Must the writer remember the previous byte across separate Write calls?",
+        "Is the character state isolated per call or carried over?"
+      ]
+    }
+  ],
+  "distribution_notes": "Distribution achieved: 3 missing_parameter (null_byte_replacement, write_return_byte_count, inserted_cr_counter_field), 1 ambiguous_requirement (bare_cr_handling), 1 contradictory_requirement (cross_call_state_persistence). Each blocker sits on a distinct axis to stay independent: byte substitution / return-value count / struct counter field / lone-CR transformation / cross-call state lifetime."
+}
