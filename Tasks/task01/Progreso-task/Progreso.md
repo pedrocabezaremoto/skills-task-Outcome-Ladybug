@@ -155,10 +155,16 @@ Tests relevantes generados (6): TestCRLFWriterConvertsLFAndTracksInsertedCRs, Te
   - **Check 2** (con resoluciones) → todos los tests pasan (correcto).
 - 5 blockers independientes definidos + 3 textos modificados + golden/test patch obstruidos listos.
 
-### Fase final de SUBIDA a Outlier (en curso — 2026-06-07)
+### Fase final de SUBIDA a Outlier (COMPLETADA — 2026-06-07)
 - ✅ `blocker_registry_draft.json` subido en "Upload the generated blocker registry JSON here" (NO se califica; es solo prueba de proceso).
-- ✅ Problem Statement pegado en el campo de la derecha y **guardado (Save)**.
-- ⏳ PENDIENTE de la fase final: Requirements, Public Interfaces, Explain your blockers (5), Check Blocker Guessability, subir golden/test patch, Relevant Tests, Modified Patches = YES, Download & Run Evals.
-- ⏳ **FALTA EL SUBMIT.** La tarea NO está enviada todavía. Recordar **THIN SPACE (U+2009)** en la respuesta final o score = 0.
+- ✅ Problem Statement, Requirements, Public Interfaces, Explain your blockers (5), Check Blocker Guessability, golden/test patch, Relevant Tests, Modified Patches = YES, Download & Run Evals → todo cargado.
+- ✅ **SUBMIT realizado con THIN SPACE (U+2009).** Tarea **ENVIADA** en Outlier.
 
-> ⚠️ NOTA PARA LA PRÓXIMA SESIÓN: "trabajo técnico finalizado" ≠ "tarea enviada". Mientras este aviso siga aquí, el **Submit con thin space todavía no se ha hecho**. No dar por enviada la tarea hasta confirmar el Submit.
+### 🏁 TAREA ENVIADA Y RESPALDADA EN GIT (2026-06-07)
+- ✅ **Tarea enviada en Outlier** (Submit hecho, con thin space incluido).
+- ✅ **Respaldada en GitHub:** push exitoso a `main` (`644e66d..7fef88c`) en
+  `git@github.com:pedrocabezaremoto/skills-task-Outcome-Ladybug.git` (remote por SSH).
+- Subido: BlockerGeneratorV0.0.2 + `Tasks/task01/` completo (textos modificados, blocker registry,
+  patches obstruidos, agent patches Check 1/2, prompts llenados, evals, bitácora).
+
+> ✅ ESTADO FINAL: tarea CERRADA — enviada en Outlier y respaldada en git. Nada pendiente en task01.
