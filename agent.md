@@ -2,7 +2,7 @@
 
 > **LÉEME PRIMERO.** Este archivo es el punto de entrada para cualquier LLM/agente que abra este proyecto.
 > Explica qué es Outcome Ladybug, cómo está organizada la carpeta y dónde encontrar cada cosa.
-> **Última actualización:** 2026-06-03
+> **Última actualización:** 2026-06-09
 
 ---
 
@@ -48,6 +48,18 @@ Cada bloqueador se documenta en un **Blocker Registry** (archivo JSON oculto que
 ```
 /root/skills-task-Outcome-Ladybug/
 ├── agent.md                    ← ESTE ARCHIVO. Punto de entrada / mapa.
+│
+├── BlockerGeneratorV0.0.3/     ← MOTOR del pipeline (Step 1 + Review). Ver sección 6.
+│   └── BlockerGenerator/
+│       ├── prompt.md               (STEP 1: genera los bloqueadores → DSL → script)
+│       ├── review-prompt.md        (REVIEW & REPAIR: repara el registry tras feedback)
+│       ├── build_blockers.py       (script determinista: DSL → registry.json + memory.json)
+│       ├── skills/*.mdc            (project-overview, blocker-generator, blocker-registry)
+│       └── GUIDE.en/es/pt-BR.md    (documentación de uso en 3 idiomas)
+│
+├── Tasks/                      ← TAREAS REALES pagadas (entregables). Ver sección 7.
+│   ├── task01/                     (Outcome Ladybug — navidrome CRLF, finalizada y enviada)
+│   └── task02/                     (en curso)
 │
 ├── Onboarding/                 ← Material conceptual de introducción (teoría).
 │   ├── Intro-Course.md
@@ -97,3 +109,31 @@ Cada bloqueador se documenta en un **Blocker Registry** (archivo JSON oculto que
 2. Lee **`Progreso-Actual/Progreso.md`** para saber en qué punto está el trabajo.
 3. Si necesitas contexto de lo ya hecho, revisa **`Historial/historial.md`**.
 4. Para teoría → `Onboarding/`. Para ejecutar el workflow → `Guias/`.
+
+---
+
+## 6. `BlockerGeneratorV0.0.3/` — el motor del pipeline
+
+Es la herramienta que **genera y repara** los bloqueadores de forma semi-automatizada. Reemplaza a la vieja `V0.0.2` (eliminada: era redundante). V0.0.3 = V0.0.2 + `review-prompt.md`; con eso el ciclo queda cerrado: **generar → evaluar → reparar**.
+
+Cómo encaja:
+
+- **`prompt.md` (STEP 1 — generar).** Recibe la tarea (problem statement, requirements, public interface, golden/test patch) y descubre puntos de decisión sin especificar. NO escribe JSON a mano: emite un **Blocker DSL** (texto compacto) y corre el script.
+- **`review-prompt.md` (REVIEW & REPAIR).** Cuando ya existe un `blocker_registry.json` y una evaluación devolvió feedback, este prompt diagnostica el bloqueador defectuoso y aplica la **mínima corrección**: Tier 1 (editar), Tier 2 (mejorar), Tier 3 (regenerar) o Escalar.
+- **`build_blockers.py`.** Script determinista que parsea el DSL y escribe los dos artefactos finales: `blocker_registry.json` (la clave de respuestas oculta) y `generation_memory.json` (estado del loop + auditoría). El LLM nunca escribe esos JSON a mano.
+- **`skills/*.mdc`.** Fuentes de verdad: `project-overview` (alcance), `blocker-generator` (qué hace válido a un bloqueador + gramática del DSL), `blocker-registry` (contrato DSL→JSON).
+
+**¿Qué es el Blocker DSL?** Es un mini-lenguaje de texto plano, orientado a líneas, que el LLM emite en vez de JSON. Registros que abren con `@` (`@meta`, `@candidate`, `@blocker`, `@rejected`, `@notes`) y dentro líneas `key: value`. El LLM solo escribe las **decisiones reales** (tipo, área, decisión bloqueada, resolución, preguntas trigger, ground truth); el script computa todo lo derivado (conteos, deficits, validation checks, el mapping del registry). Así el LLM gasta tokens en calidad del bloqueador, no en boilerplate JSON. Es el mismo DSL que se nombra en `prompt.md` línea 46 y en los tres skills: hay **un solo DSL** en todo el proyecto, definido en `blocker-generator.mdc` (sección OUTPUT FORMAT — BLOCKER DSL).
+
+---
+
+## 7. `Tasks/` — las tareas reales (de esto se vive)
+
+Aquí viven los **proyectos tipo tarea reales y pagados**: cada `taskNN/` es un encargo de Outlier por el que Pedro cobra. Es su fuente de ingresos. No son ejercicios ni teoría — son entregables que se envían.
+
+Cada carpeta `taskNN/` contiene el ciclo completo de una tarea: requerimientos, problem statement / interfaces / requirements modificados, el `blocker_registry_draft.json`, los patches de los checks (`agent_patch_check1/2.diff`), los prompts rellenados (`promptN_*_filled.md`), la evaluación final y su `Progreso-task/Progreso.md`.
+
+- `task01/` → Outcome Ladybug, caso **navidrome CRLF**: finalizada y enviada (commit `7fef88c`).
+- `task02/` → en curso.
+
+Tratar el contenido de `Tasks/` con cuidado: es trabajo entregable que se paga.
