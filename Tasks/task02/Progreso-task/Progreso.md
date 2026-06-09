@@ -7,7 +7,7 @@
 
 ---
 
-## Estado actual: Blocker Registry armado (set testeable) — listo para Part 4
+## Estado actual: Part 4 hecho (texto modificado) — listo para Part 5/6 (patches)
 
 ## Hecho ✅
 
@@ -31,9 +31,12 @@
 ## 🚩 Nota crítica — TAREA DELGADA (informar al entregar)
 `log_sigmoid` solo tiene ~1 eje fuerte (estabilidad numérica). No soporta 5 blockers fuertes independientes. Se entrega el mejor esfuerzo testeable para subir score e iterar vía SBQ. **Avisar al equipo en el submit.**
 
-## Pendiente ⬜ (siguiente: Part 4 en adelante, Guía 1)
+## Pendiente ⬜ (siguiente: Part 5/6 en adelante, Guía 1)
 
-- [ ] **Part 4:** modificar Problem Statement / Requirements para inyectar los 5 blockers (quitar detalles → al registry; plantar la contradicción #4 en Requirements).
+- [x] **Part 4 HECHO:** texto modificado → `problem_statement_modified.md`, `requirements_modified.md`, `interfaces_modified.md`.
+  - Quitado "elementwise" del interface (filtraba #4).
+  - Contradicción #4 plantada en Requirements (reduce-a-escalar vs one-to-one).
+  - Señalado el rango extremo para #1/#3/#5 sin revelar valores; "logarithm" sin "natural" (#2).
 - [ ] **Part 5:** llenar el Blocker Registry Criteria Builder con el set testeable.
 - [ ] **Part 6:** generar `golden_patch_obstructed.diff` (solo código), `test_patch_obstructed.diff` (tests + los 5 narrow tests nuevos), `setup_patch.diff` (opcional: quitar pistas del doc en expr.h).
 - [ ] **Part 7:** correr task_checker.py, Patch Content Validator, Check 1, Check 2 (screenshots).
