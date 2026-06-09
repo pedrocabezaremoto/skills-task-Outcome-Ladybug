@@ -1,0 +1,196 @@
+@meta
+round: 2
+requested: mp=3 ar=1 cr=1
+
+# ===== CANDIDATE POOL (2x deficit = 8 candidates for 4 slots) =====
+
+@candidate backward_gradient_formula
+source: golden_patch_reverse
+type: missing_parameter
+mode: injection
+area: requirements
+selected: true
+rationale: The backward formula (1 - expf(t)) * d where t is the forward output is one of several valid gradient expressions for log_sigmoid. Alternatives include sigmoid(-x)*d, expf(-x)/(1+expf(-x))*d, or (logistic(-x))*d — each is mathematically equivalent but produces different numerical behavior at extreme values. Not recoverable from sibling ops because each op has a unique gradient formula.
+evidence: return (1 - expf(t)) * d in scalar_log_sigmoid_backward_op operator()
+reject: none
+
+@candidate forward_functor_traits_cost
+source: golden_patch_reverse
+type: missing_parameter
+mode: injection
+area: requirements
+selected: true
+rationale: The Eigen functor_traits Cost for the forward op is AddCost*6 + MulCost*4, a non-trivial value specific to this op. Sibling ops have different cost values. Wrong cost values cause Eigen to make suboptimal vectorization decisions. The answer space is large (any combination of AddCost/MulCost coefficients).
+evidence: Cost = NumTraits<Scalar>::AddCost *6 + NumTraits<Scalar>::MulCost * 4 in scalar_log_sigmoid_forward_op functor_traits
+reject: none
+
+@candidate simd_vectorization_strategy
+source: golden_patch_reverse
+type: missing_parameter
+mode: injection
+area: requirements
+selected: true
+rationale: The forward packetOp uses a non-obvious branchless min/max pivot strategy with a constant of -1.0 to implement the piecewise computation without SIMD branching. No sibling functor uses this technique. Alternatives include mask-based blending, sequential scalar fallback, or polynomial approximation — each produces different performance and precision characteristics. Independent from ambiguous_stable_math (which covers the scalar formula choice, not the SIMD algorithm).
+evidence: pmin(padd(pmin(minus_one, psub(x, plog1p(pexp(x)))), pmax(minus_one, pnegate(plog1p(pexp(pnegate(x)))))), minus_one) in scalar_log_sigmoid_forward_op packetOp
+reject: none
+
+@candidate backward_unary_vs_binary_functor
+source: golden_patch_reverse
+type: contradictory_requirement
+mode: injection
+area: requirements
+selected: true
+rationale: The backward uses binaryExpr (two-input Eigen functor on fx and dEdf) but the function is defined as a unary operation, implying a unary Eigen functor in the backward. These are mutually exclusive in Eigen's template system. No sibling convention resolves this because sibling backward passes mix both unaryExpr and binaryExpr patterns without an observable rule.
+evidence: tvec(fx).binaryExpr(tvec(dEdf), scalar_log_sigmoid_backward_op<float>()) in backward_dev_impl
+reject: none
+
+@candidate backward_gradient_variable_source
+source: golden_patch_reverse
+type: missing_parameter
+mode: injection
+area: requirements
+selected: false
+rationale: The backward pass uses the cached forward output (fx) rather than recomputing from xs[0].
+evidence: tvec(fx).binaryExpr(tvec(dEdf), ...) in backward_dev_impl
+reject: Not independent from backward_gradient_formula (whose resolution mentions the forward output) and backward_unary_vs_binary_functor (whose answer reveals the backward accesses fx). Dropped due to dependence.
+
+@candidate packet_access_trait_requirements
+source: golden_patch_reverse
+type: missing_parameter
+mode: injection
+area: requirements
+selected: false
+rationale: The forward functor_traits requires specific PacketAccess trait checks (HasLog1p, HasExp, HasNegate, HasAdd, HasSub, HasMin, HasMax).
+evidence: PacketAccess = packet_traits<Scalar>::HasAdd && ... in functor_traits
+reject: Overlaps with forward_functor_traits_cost (both target the same functor_traits specialization block). Selecting cost instead.
+
+@candidate backward_functor_traits_cost
+source: golden_patch_reverse
+type: missing_parameter
+mode: injection
+area: requirements
+selected: false
+rationale: The backward functor_traits Cost is AddCost + 2*MulCost.
+evidence: Cost = NumTraits<Scalar>::AddCost + 2 * NumTraits<Scalar>::MulCost in backward functor_traits
+reject: Overlaps with forward_functor_traits_cost (both target functor_traits Cost for the same operation). Independence concern.
+
+@candidate sig_h_enum_name
+source: golden_patch_reverse
+type: missing_parameter
+mode: injection
+area: requirements
+selected: false
+rationale: The nt::logsigmoid enum value in sig.h could be log_sigmoid, logsigmoid, log_sig, etc.
+evidence: nt::logsigmoid in sig.h enum
+reject: The agent can grep sig.h for the enum pattern and pick a valid name. Adjacent to rejected multibatch-support-conflict pattern.
+
+# ===== VALIDATED BLOCKERS =====
+
+@blocker missing_backward_gradient_formula
+type: missing_parameter
+mode: injection
+area: requirements
+status: valid
+decision: Define the exact mathematical formula for the log_sigmoid backward gradient computation.
+fingerprint: backward-gradient-math-formula
+prohibited: (1 - expf(t)) | (1 - exp(fx)) | sigmoid(-x)
+desc: The requirements mandate that expressions produced by log_sigmoid compute correct gradients during backpropagation, but do not specify the exact mathematical formula the backward functor must apply to compute dEdxi from the upstream gradient.
+resolution: The backward gradient formula is (1 - exp(t)) * d, where t is the forward output and d is the upstream gradient, yielding the gradient of log_sigmoid without recomputing the sigmoid from the input.
+q: What exact formula should the backward functor use to compute the gradient of log_sigmoid?
+q: Should the gradient be expressed as sigmoid(-x)*d, or as (1-exp(forward_output))*d, or another equivalent form?
+q: What is the analytically correct and numerically stable gradient expression for log_sigmoid's backward pass?
+gt.omitted: The exact backward gradient formula and whether it is derived from the forward output or the raw input.
+gt.why: Multiple mathematically equivalent gradient formulas exist for log_sigmoid (sigmoid(-x)*d, (1-exp(t))*d, exp(-x)/(1+exp(-x))*d) and each produces different numerical behavior at extreme values. No sibling op shares this gradient, so copying is impossible.
+
+@blocker missing_forward_eigen_cost
+type: missing_parameter
+mode: injection
+area: requirements
+status: valid
+decision: Define the exact Eigen functor_traits Cost coefficients for the forward log_sigmoid SIMD functor.
+fingerprint: forward-functor-cost-coefficients
+prohibited: AddCost *6 | MulCost * 4 | Cost = NumTraits
+desc: The requirements mandate SIMD-vectorized forward computation but do not specify the Eigen functor_traits Cost that controls the optimizer's vectorization decisions for the forward functor.
+resolution: The forward functor_traits Cost must be NumTraits<Scalar>::AddCost * 6 + NumTraits<Scalar>::MulCost * 4.
+q: What Cost value should the Eigen functor_traits use for the forward log_sigmoid functor?
+q: How many AddCost and MulCost units does the forward computation require for Eigen's cost model?
+q: What is the correct functor_traits Cost expression for the log_sigmoid forward SIMD path?
+gt.omitted: The exact Eigen functor_traits Cost coefficients (AddCost multiplier and MulCost multiplier) for the forward functor.
+gt.why: No universal default exists. Each mathematical functor has a unique cost profile depending on its internal operations. Sibling ops use different coefficient combinations (e.g. logistic uses different values than exp or log). Wrong coefficients cause Eigen to make suboptimal or incorrect vectorization scheduling decisions.
+
+@blocker missing_simd_pivot_strategy
+type: missing_parameter
+mode: injection
+area: requirements
+status: valid
+decision: Define the branchless SIMD vectorization algorithm for the piecewise forward computation in the Eigen packetOp.
+fingerprint: simd-branchless-pivot-algorithm
+prohibited: min/max pivot | pmin | pmax | minus_one pivot
+desc: The requirements mandate SIMD-vectorized evaluation of the forward computation but do not specify the branchless algorithm the packetOp must use, since the piecewise scalar implementation cannot be directly vectorized due to SIMD's inability to branch per-element.
+resolution: Use a min/max pivot strategy with a constant of -1.0: compute both branches (negative case: x - log1p(exp(x)) clamped to at most -1, positive case: -log1p(exp(-x)) clamped to at least -1), add them, then clamp the sum to at most -1 via pmin.
+q: What branchless algorithm should the packetOp use to vectorize the piecewise forward computation?
+q: How should the SIMD path handle the two-branch piecewise formula without per-element branching?
+q: What vectorization strategy replaces the scalar if/else branch in the Eigen packetOp?
+gt.omitted: The branchless SIMD vectorization algorithm for the piecewise forward computation.
+gt.why: No universal default or sibling pattern exists. Standard approaches include mask-based blending (pand/pandn/por), select instructions, polynomial approximation, or the min/max pivot trick. Each produces different precision and performance characteristics. No other dynet functor uses the min/max pivot technique.
+
+@blocker contradictory_backward_functor_arity
+type: contradictory_requirement
+mode: injection
+area: requirements
+status: valid
+decision: Resolve whether the backward pass uses a unary Eigen functor operating on the upstream gradient alone or a binary Eigen functor operating on two tensors.
+fingerprint: backward-eigen-functor-arity
+prohibited: binaryExpr | binary functor | two-tensor backward
+desc: The requirements define the operation as a unary function and imply the backward Eigen functor should follow the single-input pattern, but simultaneously require caching and reusing the forward output for gradient efficiency, which demands a two-input Eigen functor — these two constraints cannot be jointly satisfied because Eigen's unaryExpr accepts exactly one tensor argument.
+resolution: The backward must use a binary Eigen functor applied via binaryExpr, accepting both the forward output tensor and the upstream gradient tensor as inputs.
+q: Should the backward Eigen functor be a unaryExpr operating only on the upstream gradient, or a binaryExpr operating on two tensors?
+q: Can the backward pass be implemented as a single-input Eigen functor, or does it require two inputs?
+q: Which Eigen expression template pattern should the backward use: unaryExpr or binaryExpr?
+gt.a: The operation is a unary function (one input, one output) and the backward Eigen functor should follow the same single-input pattern as other unary node backward passes that use unaryExpr.
+gt.b: The backward computation must reuse the cached forward output alongside the upstream gradient for correct and efficient gradient computation, requiring a two-input Eigen functor.
+gt.why: Eigen's unaryExpr takes exactly one tensor argument and cannot access a second tensor. Eigen's binaryExpr takes exactly two tensor arguments. There is no Eigen expression template that is simultaneously unary and binary. The backward pass cannot use unaryExpr if it needs both the forward output and the upstream gradient as functor inputs.
+gt.evidence: tvec(fx).binaryExpr(tvec(dEdf), scalar_log_sigmoid_backward_op<float>()) in nodes-arith-unary.cc
+
+# ===== REJECTED DRAFTS (this round) =====
+
+@rejected
+type: missing_parameter
+mode: injection
+area: requirements
+decision: Define which tensor the backward gradient computation depends on: the cached forward output or the raw input.
+gate: independence
+reason: Not independent from missing_backward_gradient_formula (whose resolution mentions the forward output) and contradictory_backward_functor_arity (whose answer reveals the backward accesses fx via binaryExpr). Solving either reveals this blocker's answer.
+checks: independent
+fingerprint: backward-tensor-dependency
+avoid: Do not create a separate blocker for backward tensor source when the gradient formula or functor arity blockers already reveal whether the backward uses the forward output.
+outcome: discarded
+
+@rejected
+type: missing_parameter
+mode: injection
+area: requirements
+decision: Specify which PacketAccess trait checks the forward functor_traits must declare.
+gate: independence
+reason: Overlaps with missing_forward_eigen_cost — both target the same functor_traits specialization block for scalar_log_sigmoid_forward_op. Solving one reveals the other's location and structure.
+checks: independent
+fingerprint: forward-packet-access-traits
+avoid: Do not target multiple aspects of the same Eigen functor_traits specialization block as separate blockers.
+outcome: discarded
+
+@rejected
+type: missing_parameter
+mode: injection
+area: requirements
+decision: Specify the backward functor_traits Cost coefficients.
+gate: independence
+reason: Overlaps with missing_forward_eigen_cost — both target functor_traits Cost for functors in the same file. Solving one reveals the pattern for the other.
+checks: independent
+fingerprint: backward-functor-cost
+avoid: Do not create separate cost-coefficient blockers for forward and backward functors of the same operation.
+outcome: discarded
+
+@notes
+distribution: Regenerated 3 missing_parameter and 1 contradictory_requirement to replace the 4 rejected round-1 blockers. All target numerical/behavioral/SIMD decisions in the log_sigmoid implementation that are NOT recoverable from sibling ops.
+independence: The 4 new blockers target distinct decisions: (1) backward gradient formula (what math to compute), (2) forward Eigen cost coefficients (optimizer hints), (3) SIMD branchless pivot algorithm (how to vectorize), (4) backward functor arity (unary vs binary Eigen pattern). None overlaps with frozen ambiguous_stable_math (which covers scalar negative-input formulation). No pair shares a decision point. Blockers 1 and 4 both involve the backward pass but are independent: knowing the formula does not tell you the Eigen template pattern, and knowing the arity does not tell you the formula.
+pool: 8 candidates generated (2x the 4-blocker deficit). 4 selected, 4 discarded. Sources: 8 golden_patch_reverse.

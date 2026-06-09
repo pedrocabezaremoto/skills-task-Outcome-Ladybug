@@ -1,0 +1,28 @@
+# Blocker Injection — Project Overview
+
+## What this project is
+We design coding tasks (SWEAP problems) that contain deliberately injected **blockers** — ambiguities, contradictions, or missing information — that make it impossible for an AI agent to solve the task correctly unless it first stops and asks a clarifying question.
+
+The deliverable for each task is a **Blocker Registry**: a hidden answer key that documents every blocker injected into the task.
+
+## Why it matters
+Today's AI agents fail in production mostly through unreliability. When a spec is incomplete or ambiguous, they proceed on silent assumptions or give up too early instead of asking for the missing piece. As Andrej Karpathy put it: <cite>"Agents don't ask humans, lack the right context, and try to one-shot everything."</cite> Andrew Ng has made the same point from the adoption side — the knowledge an agent needs is often locked in people's heads, and the agent never thinks to ask for it.
+
+No current benchmark measures whether an agent appropriately detects ambiguity and requests clarification instead of charging ahead with a wrong assumption. This project builds the data that makes that measurement possible.
+
+## The goal
+Inject blockers into a clean starting task so that the agent **MUST** ask questions before it can implement a correct patch. If the agent does not ask, it should be impossible for it to land the correct implementation except by luck.
+
+Blockers are injected by modifying some or all of the problem statement, the public interface, the requirements, or the codebase itself. Each task carries **3 to 5 blockers**, according to the blocker distribution assigned at the start of the task.
+
+## Why this is the hard, valuable part
+The registry is the product, and a blocker only has value if a competent agent genuinely cannot resolve it from the visible task, the repository, the public tests, or sensible engineering defaults. It has to *force* a question.
+
+A blocker a careful model can simply guess correctly teaches the benchmark nothing. So the bar is high: every blocker must be realistic, critical, objective, backed by a large answer space, independent from every other blocker, uncontaminated, and never a gotcha. Making models fail here is the point — not through trickery, but by exposing the cases where a reliable agent should have paused to ask, and an unreliable one guessed.
+
+## How the pipeline fits together
+- **Step 1 — Blocker generation (this repo).** From the baseline (problem statement, public interface, requirements) plus the golden and test patches, generate and validate the logical blockers, then serialize the Blocker Registry. The generator emits the compact Blocker DSL; `build_blockers.py` converts it into `blocker_registry.json` (the hidden answer key) and `generation_memory.json` (loop state and audit).
+- **Step 2 — Task obfuscation (`task-obfuscator.mdc`).** Rewrite the actual prompt text and codebase so the blockers are embedded naturally, leaving the registry as the hidden key the evaluation system scores against.
+
+## Source of truth
+This file is orientation only. `blocker-generator.mdc` defines what makes a blocker valid; `blocker-registry.mdc` defines how blockers are serialized into the registry. Where this overview appears to differ from those skills on any rule, the skills win.

@@ -1,0 +1,47 @@
+{
+  "round": 2,
+  "findings": [
+    {
+      "blocker_id": "missing_input_parameter_type",
+      "failure_category": "small_answer_space",
+      "evidence": "Eval feedback: 'The omitted datum (const Expression& x) is trivially recoverable from the repository: every sibling unary op uses the identical signature. The answer space is effectively size 1.'",
+      "tier": "regenerate",
+      "change_summary": "Removed and replaced with missing_backward_gradient_formula — targets the exact backward gradient formula (1-exp(t))*d, which has multiple mathematically equivalent alternatives and is not recoverable from any sibling op.",
+      "requires_step2_reinjection": true
+    },
+    {
+      "blocker_id": "missing_python_binding_files",
+      "failure_category": "small_answer_space",
+      "evidence": "Eval feedback: 'The omitted datum is recoverable: the agent greps python/ and copies how log/exp/lgamma are bound. Also borderline gotcha — task-scope plumbing, not a decision about the log_sigmoid behavior.'",
+      "tier": "regenerate",
+      "change_summary": "Removed and replaced with missing_forward_eigen_cost — targets the Eigen functor_traits Cost coefficients (AddCost*6 + MulCost*4), a per-op value with no universal default that affects vectorization scheduling.",
+      "requires_step2_reinjection": true
+    },
+    {
+      "blocker_id": "missing_test_suite_details",
+      "failure_category": "small_answer_space",
+      "evidence": "Eval feedback: 'The omitted datum is recoverable from the X_gradient naming convention of the sibling tests, and the test NAME is not load-bearing. Not a critical, objective decision.'",
+      "tier": "regenerate",
+      "change_summary": "Removed and replaced with missing_simd_pivot_strategy — targets the branchless min/max pivot SIMD algorithm for the forward packetOp, a non-obvious technique not used by any sibling functor in dynet.",
+      "requires_step2_reinjection": true
+    },
+    {
+      "blocker_id": "contradictory_multibatch_support",
+      "failure_category": "satisfiable_contradiction",
+      "evidence": "Eval feedback: 'The contradiction is an artificial support-X vs disable-X negation, and the resolution (supports_multibatch() == true) is recoverable: every batchable sibling node sets it true.'",
+      "tier": "regenerate",
+      "change_summary": "Removed and replaced with contradictory_backward_functor_arity — a genuine contradiction between the unary function pattern (implying unaryExpr) and the need to access the cached forward output (requiring binaryExpr), which are mutually exclusive in Eigen's expression template system.",
+      "requires_step2_reinjection": true
+    },
+    {
+      "blocker_id": "ambiguous_stable_math",
+      "failure_category": null,
+      "evidence": "Eval feedback: 'VALID (keep, frozen). Real ambiguity, large answer space, grounded in scalar_log_sigmoid_forward_op.'",
+      "tier": "direct_edit",
+      "change_summary": "No change. Frozen as instructed.",
+      "requires_step2_reinjection": false
+    }
+  ],
+  "frozen_blockers": ["ambiguous_stable_math"],
+  "notes": "All 4 rejected blockers were Tier 3 (regenerate) because their fundamental decision points were repo-recoverable — wording tweaks could not fix a size-1 answer space. The 4 replacement blockers all target the numerical/behavioral/SIMD implementation internals of log_sigmoid, where sibling ops differ and copying is impossible. Independence was carefully audited: an initial draft included a backward-tensor-dependency blocker that was found non-independent from both the gradient formula and functor arity blockers, so it was discarded and replaced with the SIMD pivot strategy blocker. The backward gradient formula and backward functor arity blockers coexist because knowing the math formula does not determine the Eigen expression template pattern, and vice versa. Step 2 must reinject all 4 new blockers."
+}

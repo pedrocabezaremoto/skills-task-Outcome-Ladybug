@@ -1,0 +1,26 @@
+# Eval Feedback — Round 1 review (task02 dynet log_sigmoid)
+
+Source: internal QA review (acts as eval feedback for the REVIEW & REPAIR pass).
+Distribution must stay: mp=3, ar=1, cr=1.
+
+## Per-blocker findings
+
+### missing_input_parameter_type — REJECT (small_answer_space)
+The omitted datum (`const Expression& x`) is trivially recoverable from the repository: every sibling unary op in dynet/expr.cc and dynet/expr.h (tanh, log, exp, asinh, lgamma, ...) uses the identical `const Expression& x` signature. A competent agent copies the convention instead of asking. The answer space is effectively size 1. Replace this blocker's decision point with one that is NOT recoverable from sibling ops, the repo, or convention.
+
+### missing_python_binding_files — REJECT (small_answer_space + gotcha)
+The omitted datum (update `python/_dynet.pxd` and `python/_dynet.pyx`) is recoverable: the agent greps `python/` and copies how `log`/`exp`/`lgamma` are bound. Also borderline gotcha — it is task-scope plumbing, not a decision about the log_sigmoid behavior. Replace with a load-bearing behavioral decision the agent cannot recover from the repo.
+
+### missing_test_suite_details — REJECT (small_answer_space + non-critical)
+The omitted datum (test file `tests/test-nodes.cc`, test name `log_sigmoid_gradient`) is recoverable from the `X_gradient` naming convention of the sibling tests, and the test NAME is not load-bearing (it does not change correct behavior). Not a critical, objective decision. Replace with a behavioral decision that a narrow test can validate and that the agent cannot guess.
+
+### ambiguous_stable_math — VALID (keep, frozen)
+Real ambiguity ("safely for negative inputs": clamping vs epsilon vs algebraic expansion), large answer space, grounded in scalar_log_sigmoid_forward_op, validatable at extreme inputs. Do NOT change.
+
+### contradictory_multibatch_support — WEAK (satisfiable / small_answer_space)
+The contradiction is an artificial "support X" vs "disable X" negation, and the resolution (`supports_multibatch() == true`) is recoverable: every batchable sibling node sets it true, so the agent copies the pattern. Either strengthen into a genuine, non-recoverable contradiction at a real decision point, or regenerate the cr blocker at a decision point whose resolution is NOT recoverable from sibling nodes.
+
+## Guidance for repair
+- Keep `ambiguous_stable_math` frozen.
+- The only strong, non-recoverable axis in this task is the NUMERICAL behavior of log_sigmoid (forward saturation values, gradient at saturation, exact stable formulation). Prefer decision points there, but keep each blocker INDEPENDENT from `ambiguous_stable_math` (different observable: e.g. exact forward value at a large-magnitude input, gradient value at saturation, output for x=0 sign/magnitude) — do not re-test the same observable.
+- If a stronger decision point genuinely does not exist for a slot, an honest escalate/regenerate is preferred over keeping a repo-recoverable blocker.

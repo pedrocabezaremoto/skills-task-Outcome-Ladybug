@@ -1,0 +1,26 @@
+{
+  "blockers": [
+    {
+      "id": "ambiguous_stable_math",
+      "type": "ambiguous_requirement",
+      "mode": "injection",
+      "area_of_obstruction": "requirements",
+      "description": "The requirement to compute the operation \"safely for negative inputs\" is ambiguous, as it admits multiple implementations such as clamping, adding an epsilon, or using a mathematically equivalent stable expansion.",
+      "resolution": "Use the stable mathematical expansion x - log1pf(expf(x)) for negative inputs.",
+      "trigger_questions": [
+        "What exactly does computing 'safely for negative inputs' mean?",
+        "Should I use the stable piecewise mathematical expansion for negative x?",
+        "Does 'safely' mean clamping the input, or using a specific stable formulation?"
+      ],
+      "independence": {
+        "decision_point": "Determine the exact stable mathematical formulation for negative inputs.",
+        "hidden_resolution_fingerprint": "ambiguous-safe-math",
+        "prohibited_visible_terms": [
+          "x - log1pf(expf(x))",
+          "piecewise"
+        ]
+      }
+    }
+  ],
+  "distribution_notes": "Generated exactly the requested distribution: mp=3, ar=1, cr=1. Mode split this round: 1 extraction, 4 injection."
+}

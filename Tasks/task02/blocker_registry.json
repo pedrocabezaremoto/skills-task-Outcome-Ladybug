@@ -1,0 +1,115 @@
+{
+  "blockers": [
+    {
+      "id": "ambiguous_stable_math",
+      "type": "ambiguous_requirement",
+      "mode": "injection",
+      "area_of_obstruction": "requirements",
+      "description": "The requirement to compute the operation \"safely for negative inputs\" is ambiguous, as it admits multiple implementations such as clamping, adding an epsilon, or using a mathematically equivalent stable expansion.",
+      "resolution": "Use the stable mathematical expansion x - log1pf(expf(x)) for negative inputs.",
+      "trigger_questions": [
+        "What exactly does computing 'safely for negative inputs' mean?",
+        "Should I use the stable piecewise mathematical expansion for negative x?",
+        "Does 'safely' mean clamping the input, or using a specific stable formulation?"
+      ],
+      "independence": {
+        "decision_point": "Determine the exact stable mathematical formulation for negative inputs.",
+        "hidden_resolution_fingerprint": "ambiguous-safe-math",
+        "prohibited_visible_terms": [
+          "x - log1pf(expf(x))",
+          "piecewise"
+        ]
+      }
+    },
+    {
+      "id": "missing_backward_gradient_formula",
+      "type": "missing_parameter",
+      "mode": "injection",
+      "area_of_obstruction": "requirements",
+      "description": "The requirements mandate that expressions produced by log_sigmoid compute correct gradients during backpropagation, but do not specify the exact mathematical formula the backward functor must apply to compute dEdxi from the upstream gradient.",
+      "resolution": "The backward gradient formula is (1 - exp(t)) * d, where t is the forward output and d is the upstream gradient, yielding the gradient of log_sigmoid without recomputing the sigmoid from the input.",
+      "trigger_questions": [
+        "What exact formula should the backward functor use to compute the gradient of log_sigmoid?",
+        "Should the gradient be expressed as sigmoid(-x)*d, or as (1-exp(forward_output))*d, or another equivalent form?",
+        "What is the analytically correct and numerically stable gradient expression for log_sigmoid's backward pass?"
+      ],
+      "independence": {
+        "decision_point": "Define the exact mathematical formula for the log_sigmoid backward gradient computation.",
+        "hidden_resolution_fingerprint": "backward-gradient-math-formula",
+        "prohibited_visible_terms": [
+          "(1 - expf(t))",
+          "(1 - exp(fx))",
+          "sigmoid(-x)"
+        ]
+      }
+    },
+    {
+      "id": "missing_forward_eigen_cost",
+      "type": "missing_parameter",
+      "mode": "injection",
+      "area_of_obstruction": "requirements",
+      "description": "The requirements mandate SIMD-vectorized forward computation but do not specify the Eigen functor_traits Cost that controls the optimizer's vectorization decisions for the forward functor.",
+      "resolution": "The forward functor_traits Cost must be NumTraits<Scalar>::AddCost * 6 + NumTraits<Scalar>::MulCost * 4.",
+      "trigger_questions": [
+        "What Cost value should the Eigen functor_traits use for the forward log_sigmoid functor?",
+        "How many AddCost and MulCost units does the forward computation require for Eigen's cost model?",
+        "What is the correct functor_traits Cost expression for the log_sigmoid forward SIMD path?"
+      ],
+      "independence": {
+        "decision_point": "Define the exact Eigen functor_traits Cost coefficients for the forward log_sigmoid SIMD functor.",
+        "hidden_resolution_fingerprint": "forward-functor-cost-coefficients",
+        "prohibited_visible_terms": [
+          "AddCost *6",
+          "MulCost * 4",
+          "Cost = NumTraits"
+        ]
+      }
+    },
+    {
+      "id": "missing_simd_pivot_strategy",
+      "type": "missing_parameter",
+      "mode": "injection",
+      "area_of_obstruction": "requirements",
+      "description": "The requirements mandate SIMD-vectorized evaluation of the forward computation but do not specify the branchless algorithm the packetOp must use, since the piecewise scalar implementation cannot be directly vectorized due to SIMD's inability to branch per-element.",
+      "resolution": "Use a min/max pivot strategy with a constant of -1.0: compute both branches (negative case: x - log1p(exp(x)) clamped to at most -1, positive case: -log1p(exp(-x)) clamped to at least -1), add them, then clamp the sum to at most -1 via pmin.",
+      "trigger_questions": [
+        "What branchless algorithm should the packetOp use to vectorize the piecewise forward computation?",
+        "How should the SIMD path handle the two-branch piecewise formula without per-element branching?",
+        "What vectorization strategy replaces the scalar if/else branch in the Eigen packetOp?"
+      ],
+      "independence": {
+        "decision_point": "Define the branchless SIMD vectorization algorithm for the piecewise forward computation in the Eigen packetOp.",
+        "hidden_resolution_fingerprint": "simd-branchless-pivot-algorithm",
+        "prohibited_visible_terms": [
+          "min/max pivot",
+          "pmin",
+          "pmax",
+          "minus_one pivot"
+        ]
+      }
+    },
+    {
+      "id": "contradictory_backward_functor_arity",
+      "type": "contradictory_requirement",
+      "mode": "injection",
+      "area_of_obstruction": "requirements",
+      "description": "The requirements define the operation as a unary function and imply the backward Eigen functor should follow the single-input pattern, but simultaneously require caching and reusing the forward output for gradient efficiency, which demands a two-input Eigen functor — these two constraints cannot be jointly satisfied because Eigen's unaryExpr accepts exactly one tensor argument.",
+      "resolution": "The backward must use a binary Eigen functor applied via binaryExpr, accepting both the forward output tensor and the upstream gradient tensor as inputs.",
+      "trigger_questions": [
+        "Should the backward Eigen functor be a unaryExpr operating only on the upstream gradient, or a binaryExpr operating on two tensors?",
+        "Can the backward pass be implemented as a single-input Eigen functor, or does it require two inputs?",
+        "Which Eigen expression template pattern should the backward use: unaryExpr or binaryExpr?"
+      ],
+      "independence": {
+        "decision_point": "Resolve whether the backward pass uses a unary Eigen functor operating on the upstream gradient alone or a binary Eigen functor operating on two tensors.",
+        "hidden_resolution_fingerprint": "backward-eigen-functor-arity",
+        "prohibited_visible_terms": [
+          "binaryExpr",
+          "binary functor",
+          "two-tensor backward"
+        ]
+      }
+    }
+  ],
+  "distribution_notes": "Regenerated 3 missing_parameter and 1 contradictory_requirement to replace the 4 rejected round-1 blockers. All target numerical/behavioral/SIMD decisions in the log_sigmoid implementation that are NOT recoverable from sibling ops. Mode split this round: 0 extraction, 4 injection."
+}

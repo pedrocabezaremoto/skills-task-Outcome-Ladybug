@@ -1,0 +1,62 @@
+[
+  {
+    "attempted_type": "missing_parameter",
+    "attempted_mode": "extraction",
+    "attempted_area_of_obstruction": "public_interface",
+    "attempted_decision_point": "Define the exact input parameter type for the log_sigmoid function.",
+    "failure_gate": "quality",
+    "failure_reason": "The resolution (const Expression& x) is trivially recoverable from every sibling unary op in dynet/expr.cc and dynet/expr.h. Answer space is effectively size 1.",
+    "failed_checks": ["large_search_space"],
+    "failed_pattern_fingerprint": "input-parameter-type",
+    "avoid_in_future": "Do not target parameter type or signature elements that are identical across all sibling unary ops in the same codebase.",
+    "repair_outcome": "discarded"
+  },
+  {
+    "attempted_type": "missing_parameter",
+    "attempted_mode": "injection",
+    "attempted_area_of_obstruction": "requirements",
+    "attempted_decision_point": "Identify which Python binding files must be updated to expose the new operation.",
+    "failure_gate": "quality",
+    "failure_reason": "The target files (_dynet.pxd, _dynet.pyx) are recoverable by grepping python/ and copying sibling bindings. Also borderline gotcha: task-scope plumbing, not a behavioral decision.",
+    "failed_checks": ["large_search_space", "not_gotcha"],
+    "failed_pattern_fingerprint": "python-binding-files",
+    "avoid_in_future": "Do not target which files to update when the file set is discoverable by grepping existing sibling implementations in the same directory.",
+    "repair_outcome": "discarded"
+  },
+  {
+    "attempted_type": "missing_parameter",
+    "attempted_mode": "injection",
+    "attempted_area_of_obstruction": "requirements",
+    "attempted_decision_point": "Identify the exact test file and test case name to add for verifying the operation's gradient.",
+    "failure_gate": "quality",
+    "failure_reason": "The test file and naming convention (X_gradient in tests/test-nodes.cc) are trivially recoverable from sibling test cases. The test name is not load-bearing for correct behavior.",
+    "failed_checks": ["large_search_space", "critical"],
+    "failed_pattern_fingerprint": "test-suite-details",
+    "avoid_in_future": "Do not target test file names or test case names that follow an obvious naming convention visible in sibling tests.",
+    "repair_outcome": "discarded"
+  },
+  {
+    "attempted_type": "contradictory_requirement",
+    "attempted_mode": "injection",
+    "attempted_area_of_obstruction": "requirements",
+    "attempted_decision_point": "Resolve whether the node supports multibatch operations.",
+    "failure_gate": "quality",
+    "failure_reason": "The contradiction (support batching vs disable multibatch) is artificial. Resolution (supports_multibatch() == true) is recoverable from every batchable sibling node which sets it true.",
+    "failed_checks": ["large_search_space"],
+    "failed_pattern_fingerprint": "multibatch-support-conflict",
+    "avoid_in_future": "Do not create contradictions whose resolution is a boolean copied from all sibling nodes. Target decisions with genuinely large answer spaces that differ per-op.",
+    "repair_outcome": "discarded"
+  },
+  {
+    "attempted_type": "missing_parameter",
+    "attempted_mode": "injection",
+    "attempted_area_of_obstruction": "requirements",
+    "attempted_decision_point": "Define which tensor the backward gradient computation depends on: the cached forward output or the raw input.",
+    "failure_gate": "independence",
+    "failure_reason": "Not independent from the backward gradient formula blocker and the backward functor arity blocker. Knowing the gradient formula (which mentions the forward output) reveals this blocker's answer. Knowing the functor arity (binary on fx and dEdf) also reveals it.",
+    "failed_checks": ["independent"],
+    "failed_pattern_fingerprint": "backward-tensor-dependency",
+    "avoid_in_future": "Do not create a separate blocker for backward tensor source when the gradient formula or functor arity blockers already reveal whether the backward uses the forward output.",
+    "repair_outcome": "discarded"
+  }
+]

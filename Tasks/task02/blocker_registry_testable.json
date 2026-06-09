@@ -1,0 +1,95 @@
+{
+  "blockers": [
+    {
+      "id": "negative_tail_stability",
+      "type": "missing_parameter",
+      "mode": "injection",
+      "area_of_obstruction": "requirements",
+      "description": "The requirements state the operation must work for all real inputs but do not specify the output for large-magnitude negative inputs, where a direct definition can overflow.",
+      "resolution": "For large-magnitude negative x the result must stay finite and approach x itself: log_sigmoid(-30.0) must be approximately -30.0 (within 1e-2), never -inf or NaN.",
+      "trigger_questions": [
+        "What value should log_sigmoid produce for a large negative input like -30?",
+        "Must the output stay finite for large-magnitude negative inputs, or is -inf acceptable?",
+        "Is there a numerical-stability requirement for the negative range?"
+      ],
+      "independence": {
+        "decision_point": "Define the required output for large-magnitude negative inputs.",
+        "hidden_resolution_fingerprint": "neg-tail-finite-approx-x",
+        "prohibited_visible_terms": ["x - log1pf(expf(x))", "log1p", "numerically stable"]
+      }
+    },
+    {
+      "id": "logarithm_base",
+      "type": "ambiguous_requirement",
+      "mode": "injection",
+      "area_of_obstruction": "requirements",
+      "description": "The requirement to compute the 'logarithm of the sigmoid' does not specify the logarithm base, which changes both the output magnitude and the gradient scale.",
+      "resolution": "Use the natural logarithm (base e). log_sigmoid(0) must equal ln(0.5) which is approximately -0.6931.",
+      "trigger_questions": [
+        "Which logarithm base should be used: natural (e), base 10, or base 2?",
+        "Should log_sigmoid(0) equal ln(0.5) (approx -0.6931) or log10(0.5) (approx -0.3010)?",
+        "Does 'logarithm' here mean the natural log used elsewhere in the API?"
+      ],
+      "independence": {
+        "decision_point": "Determine the base of the logarithm used by the operation.",
+        "hidden_resolution_fingerprint": "log-base-natural-e",
+        "prohibited_visible_terms": ["natural log", "ln(", "base e", "log1pf"]
+      }
+    },
+    {
+      "id": "negative_tail_gradient",
+      "type": "missing_parameter",
+      "mode": "injection",
+      "area_of_obstruction": "requirements",
+      "description": "The requirements mandate correct gradients but do not specify the required gradient value for large-magnitude negative inputs, where a naive derivative can lose precision or diverge.",
+      "resolution": "The gradient of log_sigmoid w.r.t. its input is sigmoid(-x) = 1 - sigmoid(x). For large negative x it must approach 1.0 and stay finite: the derivative at x=-30 must be approximately 1.0.",
+      "trigger_questions": [
+        "What value should the gradient take for a large negative input?",
+        "Must the backward pass stay finite and approach 1 as x goes to negative infinity?",
+        "How should the gradient be computed to stay numerically stable in the negative range?"
+      ],
+      "independence": {
+        "decision_point": "Define the required gradient behavior for large-magnitude negative inputs.",
+        "hidden_resolution_fingerprint": "neg-tail-gradient-to-one",
+        "prohibited_visible_terms": ["1 - sigmoid", "sigmoid(-x)", "1 - exp"]
+      }
+    },
+    {
+      "id": "elementwise_vs_reduction",
+      "type": "contradictory_requirement",
+      "mode": "injection",
+      "area_of_obstruction": "requirements",
+      "description": "The requirements simultaneously demand that log_sigmoid collapse its input into a single aggregate log-likelihood value and that it return an expression with exactly the same shape as its input; an operation cannot both reduce to a scalar and preserve the input shape.",
+      "resolution": "The operation is elementwise and shape-preserving: the output Dim equals the input Dim (one value per element). It does NOT reduce or aggregate to a scalar.",
+      "trigger_questions": [
+        "Should log_sigmoid reduce its input to a single scalar, or return one value per element?",
+        "Must the output shape match the input shape, or is it aggregated?",
+        "Is this an elementwise operation or a reduction?"
+      ],
+      "independence": {
+        "decision_point": "Resolve whether the operation is elementwise (shape-preserving) or a reduction to a scalar.",
+        "hidden_resolution_fingerprint": "elementwise-shape-preserving",
+        "prohibited_visible_terms": ["elementwise", "same shape", "per element"]
+      }
+    },
+    {
+      "id": "positive_tail_saturation",
+      "type": "missing_parameter",
+      "mode": "injection",
+      "area_of_obstruction": "requirements",
+      "description": "The requirements do not specify the output for large-magnitude positive inputs, where the result saturates toward zero; whether it is a tiny negative value, clamped to exactly zero, or an error is left unspecified.",
+      "resolution": "For large positive x the output must be finite, less than or equal to 0, and approach 0 from below: log_sigmoid(30.0) must be approximately 0 (a tiny negative number near -1e-13); never positive, +inf, or NaN.",
+      "trigger_questions": [
+        "What value should log_sigmoid produce for a large positive input like 30?",
+        "Should the positive-tail output be exactly 0, a tiny negative number, or something else?",
+        "Must the output remain less than or equal to 0 for all inputs?"
+      ],
+      "independence": {
+        "decision_point": "Define the required output for large-magnitude positive inputs.",
+        "hidden_resolution_fingerprint": "pos-tail-zero-from-below",
+        "prohibited_visible_terms": ["-log1pf(expf(-x))", "approaches 0 from below"]
+      }
+    }
+  ],
+  "distribution_notes": "Hand-built testable set: mp=3 (negative_tail_stability, negative_tail_gradient, positive_tail_saturation), ar=1 (logarithm_base), cr=1 (elementwise_vs_reduction). Every blocker is validated by a narrow test on observable behavior (forward value, gradient value, or output shape), so a wrong guess makes the agent's patch FAIL. See blocker_implementation_notes_v2.md for tests, golden changes, confidence, and known risks."
+}

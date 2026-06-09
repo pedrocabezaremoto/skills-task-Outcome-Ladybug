@@ -1,0 +1,167 @@
+# CONTEXT AND OBJECTIVE
+This is the serialization companion for `blocker-generator.mdc`.
+
+Do not use this skill to decide whether a blocker is valid. `blocker-generator.mdc` is the source of truth for blocker definitions, quality rules, independence, and contamination checks. This file defines how the validated blockers, expressed in the Blocker DSL, are converted into `blocker_registry.json` and `generation_memory.json`.
+
+Serialization is no longer hand-written. The script `build_blockers.py` performs it deterministically. This document is the contract that script implements; read it to understand what the model must put in the DSL so the output files are correct.
+
+# SERIALIZATION RESPONSIBILITIES
+The script:
+- preserves each validated blocker's exact meaning;
+- maps each `@blocker` record into the required registry shape;
+- keeps each registry entry self-contained;
+- adds no new blocker logic, requirement, or interpretation;
+- reconstructs the boilerplate the model omits (validation checks, registry mapping, all counts);
+- preserves independence across repeated generation rounds by appending, never rewriting.
+
+# INPUT CONTRACT
+The script serializes into `blocker_registry.json` only `@blocker` records whose `status` is `valid` or `repaired_valid`. The Blocker Acceptance Checklist in `blocker-generator.mdc` must have passed in order: independence first, type classification second, quality third. Rejected attempts belong in `@rejected` records, which flow into `rejection_memory`, not into `blocker_registry.json`.
+
+The model must not emit an `@blocker` record for a draft that failed any gate. A failed draft is an `@rejected` record.
+
+# OUTPUT FILES
+The script writes two files with these exact names:
+
+```text
+blocker_registry.json
+generation_memory.json
+```
+
+Use these exact names. Do not use `blockers_registry.json`.
+
+When the orchestrator (`prompt.md`) refers to the registry, it is the `blocker_registry.json` file — without renaming, restructuring, or stripping fields.
+
+# REGISTRY SHAPE
+`blocker_registry.json` is the load-bearing artifact and is reconsumed in the next round as the existing registry. It is never slimmed.
+
+```json
+{
+  "blockers": [
+    {
+      "id": "descriptive_blocker_summary",
+      "type": "missing_parameter | ambiguous_requirement | contradictory_requirement",
+      "mode": "extraction | injection",
+      "area_of_obstruction": "problem_statement | requirements | public_interface | codebase | problem_statement+requirements | problem_statement+public_interface | public_interface+requirements",
+      "description": "WHY this is a blocker, without revealing the resolution.",
+      "resolution": "The exact answer needed to resolve this blocker.",
+      "trigger_questions": ["Question variation 1?", "Question variation 2?", "Question variation 3?"],
+      "independence": {
+        "decision_point": "Implementation decision blocked by this entry.",
+        "hidden_resolution_fingerprint": "Short non-revealing label for cross-round dedupe.",
+        "prohibited_visible_terms": ["Term that must not appear in generated prompts or other blocker metadata."]
+      }
+    }
+  ],
+  "distribution_notes": "Notes about distribution feasibility and the mode split."
+}
+```
+
+# DSL-TO-REGISTRY MAPPING
+For each `@blocker` record, the script builds one registry entry:
+
+| Registry field | DSL source |
+| --- | --- |
+| `id` | `@blocker <id>` |
+| `type` | `type:` |
+| `mode` | `mode:` |
+| `area_of_obstruction` | `area:` |
+| `description` | `desc:` |
+| `resolution` | `resolution:` |
+| `trigger_questions` | each `q:` line, in order |
+| `independence.decision_point` | `decision:` |
+| `independence.hidden_resolution_fingerprint` | `fingerprint:` |
+| `independence.prohibited_visible_terms` | `prohibited:` split on ` | ` |
+
+`distribution_notes` is `@notes` `distribution:` followed by a computed sentence stating the extraction/injection mode split for the round.
+
+# DSL-TO-MEMORY MAPPING (SLIMMED)
+`generation_memory.json` is loop state and audit. It is never reconsumed except for `rejection_memory`, so the boilerplate fields are slimmed:
+- `validation` is `{ "status", "repair_log" }` only. The ten per-check `pass` entries are dropped because they are fully implied by `status`.
+- The per-blocker `registry_mapping` block is dropped because it duplicates the registry entry.
+- `deficit_distribution`, `achieved_distribution`, `mode_distribution`, and `halt.achieved_total` are computed by the script, not taken from the DSL.
+
+Shape:
+```json
+{
+  "halt": {
+    "reason": "distribution_satisfied | budget_exhausted | continue | distribution_already_satisfied",
+    "round": 1,
+    "achieved_total": { "missing_parameter": 0, "ambiguous_requirement": 0, "contradictory_requirement": 0 },
+    "requested": { "missing_parameter": 0, "ambiguous_requirement": 0, "contradictory_requirement": 0 }
+  },
+  "blocker_dataset": {
+    "round": 1,
+    "requested_distribution": { "missing_parameter": 0, "ambiguous_requirement": 0, "contradictory_requirement": 0 },
+    "deficit_distribution": { "missing_parameter": 0, "ambiguous_requirement": 0, "contradictory_requirement": 0 },
+    "candidate_pool": [
+      {
+        "candidate_id": "snake_case_id",
+        "source": "baseline_extraction | golden_patch_reverse | test_patch_mining",
+        "preliminary_type": "missing_parameter | ambiguous_requirement | contradictory_requirement",
+        "mode": "extraction | injection",
+        "area": "<area token>",
+        "rationale": "...",
+        "patch_evidence": "<patch evidence or baseline_only>",
+        "selected": true,
+        "rejection_reason": "none | ..."
+      }
+    ],
+    "blockers": [
+      {
+        "id": "snake_case_id",
+        "type": "missing_parameter",
+        "mode": "extraction",
+        "area_of_obstruction": "problem_statement",
+        "ground_truth_annotation": { "...type specific..." },
+        "validation": { "status": "valid", "repair_log": "none" },
+        "independence": {
+          "decision_point": "...",
+          "hidden_resolution_fingerprint": "...",
+          "prohibited_visible_terms": ["..."],
+          "overlaps_prior_registry": false,
+          "overlap_notes": "none"
+        }
+      }
+    ],
+    "rejected_blockers": [ "...from @rejected records, this round only..." ],
+    "batch_audit": {
+      "status": "valid",
+      "achieved_distribution": { "missing_parameter": 0, "ambiguous_requirement": 0, "contradictory_requirement": 0 },
+      "mode_distribution": { "extraction": 0, "injection": 0 },
+      "distribution_notes": "@notes distribution:",
+      "independence_summary": "@notes independence:",
+      "candidate_pool_summary": "@notes pool:"
+    }
+  },
+  "rejection_memory": [ "...incoming rejection_memory first, then this round's @rejected records..." ]
+}
+```
+
+`ground_truth_annotation` is built per type, with `component` derived from `area`:
+- `missing_parameter`: `{ omitted_element (gt.omitted), component, why_blocker (gt.why) }`.
+- `ambiguous_requirement`: `{ ambiguous_element (gt.element), component, interpretations[] }`, where each `gt.read: <reading> >> <impl>` becomes `{ reading, implementation }`.
+- `contradictory_requirement`: `{ requirement_a {text (gt.a), component}, requirement_b {text (gt.b), component}, why_impossible (gt.why), patch_evidence (gt.evidence) }`. For `area = X+Y`, `requirement_a.component = X` and `requirement_b.component = Y`.
+
+# CONTENT RULES FOR THE MODEL
+These constrain what the model writes in the DSL so the serialized output is sound:
+- `description`: explain what is missing, ambiguous, or contradictory without revealing the answer. For `injection` blockers, it must not reveal which scenario was added or hint at its resolution.
+- `resolution`: include the exact values, formats, or policies needed to resolve the blocker. For `injection` blockers, it must also state what was injected and the correct policy for the injected scenario.
+- `trigger_questions` (`q:`): 3-5 complete, realistic questions that unlock only this blocker.
+- `fingerprint`: descriptive enough for dedupe but never revealing the exact resolution.
+- `prohibited`: terms that must not appear in other generated prompts, descriptions, or trigger questions except inside this blocker's own resolution.
+
+The script does not strengthen a weak resolution or vaguen a strong one. If a `@blocker` record is incomplete (missing `resolution`, missing the type-specific ground truth, or — for injection — a resolution that omits the injected scenario or its policy), do not emit that `@blocker` record; record the gap in `@notes` `distribution:` instead.
+
+# CROSS-ROUND APPEND
+When the orchestrator passes the previous round's `blocker_registry.json` (`--existing`) and `rejection_memory` (`--rejection-memory`):
+- existing registry entries are written first, in their original order; this round's new entries are appended after them;
+- the incoming `rejection_memory` is written first; this round's `@rejected` records are appended after it;
+- the model must not re-emit a frozen entry, reuse an existing `id`, ask for the same implementation decision, or write a resolution that matches, depends on, narrows, or reveals an existing one (enforced during generation per `blocker-generator.mdc`).
+
+# INTEGRITY CHECK
+Before the model runs the script, verify within the DSL that:
+- each `@blocker` corresponds to exactly one validated blocker;
+- no `desc`, `resolution`, `q`, or `area` reveals or narrows another blocker's answer;
+- no resolution depends on another blocker's resolution;
+- every `resolution` is precise enough to answer the clarifying question without follow-up;
+- every `@blocker` carries `mode`, `area`, the type-specific ground truth, and an `independence` decision/fingerprint/prohibited set.
