@@ -39,7 +39,9 @@
 
 3. **"Blocker Description Error"** → dice que #1/#3/#5 están **mal tipados como `missing_parameter`**: en realidad son *underspecified behavioral expectations* (= ambiguous), porque **log_sigmoid no tiene parámetros numéricos** que falten. Confirma que "3 missing_parameter" no le calza al task (no hay knobs/timeouts/thresholds que omitir).
 
-4. **"Blockers should not be guessable"** → solo `logarithm_base` (#2) GUESSABLE/WEAK; los otros 4 NOT GUESSABLE/STRONG.
+4. **"Blockers should not be guessable"** (eval del criteria builder, SIN explorar codebase) → solo `logarithm_base` (#2) GUESSABLE/WEAK; los otros 4 STRONG.
+
+5. **Guessability prompt real (Guía 11, CON exploración de codebase, 2 modelos):** `negative_tail_stability` salió **ADIVINADO por Gemini 3.1 Pro Y GPT-5.4** (ambos clavaron "≈ x, gradiente→1.0, elementwise"). Causa: matemática elemental + **contaminación del baseline** (`logistic` estable, `LogSumExp`, y `examples/.../nce.h` que ya usa `log(logistic(...))`). → confirma que #1 (y probablemente #3/#5) son adivinables por naturaleza del task. Manejo: subir screenshots + responder "Yes" (no es culpa del contributor).
 
 ### Conclusión de fit
 - **Fuerte y natural:** #1, #3, #5 (colas/gradiente numérico). 3 sólidos.
@@ -56,7 +58,7 @@
 ---
 
 ## Pendiente ⬜
-- [ ] **Guessability check (actual):** correr el prompt de Guía 11 por cada blocker (≥2 modelos c/u), baseline `8ea37f68` SIN golden/test, ≥6 screenshots. (#2 saldrá guessable → responder "Yes" y subir su screenshot.)
+- [~] **Guessability check (en curso):** prompts Guía 11 corriendo (2 modelos c/u). #1 ya salió ADIVINADO por ambos modelos (esperado). Subir ≥6 screenshots (incl. adivinadas) + responder **"Yes"** (blockers originales, no facilitados por el contributor).
 - [ ] **Part 6 patches:** `golden_patch_obstructed.diff` (golden sin cambios), `test_patch_obstructed.diff` (los 5 narrow tests nuevos), `setup_patch` (probablemente NO necesario: en baseline no hay leaks de código).
 - [ ] **Part 7:** task_checker.py, Patch Content Validator, Check 1, Check 2 (screenshots).
 - [ ] **Submit** con THIN SPACE (U+2009) + nota de tarea delgada.
