@@ -1,0 +1,5 @@
+# Title
+Log-sigmoid operation is not available in the expression API
+
+## Description
+The expression API does not provide a log-sigmoid operation, preventing users from computing the logarithm of the sigmoid function through the standard expression interface.

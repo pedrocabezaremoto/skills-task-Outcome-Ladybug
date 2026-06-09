@@ -1,0 +1,2 @@
+- The expression API must provide a unary `log_sigmoid` operation that accepts an expression as input and returns a new expression.
+- Expressions produced by `log_sigmoid` must compute correct gradients with respect to their input during backpropagation when used in a computation graph.

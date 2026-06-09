@@ -1,0 +1,260 @@
+diff --git a/doc/source/python_ref.rst b/doc/source/python_ref.rst
+index e887f86e2..6387cf809 100644
+--- a/doc/source/python_ref.rst
++++ b/doc/source/python_ref.rst
+@@ -189,6 +189,8 @@ Arithmetic operations
+
+ .. autofunction:: dynet.log
+
++.. autofunction:: dynet.log_sigmoid
++
+ .. autofunction:: dynet.lgamma
+
+ .. autofunction:: dynet.sin
+diff --git a/dynet/expr.cc b/dynet/expr.cc
+index c4d5afa4f..73ec70188 100644
+--- a/dynet/expr.cc
++++ b/dynet/expr.cc
+@@ -80,6 +80,7 @@ Expression tanh(const Expression& x) { return Expression(x.pg, x.pg->add_functio
+ Expression asinh(const Expression& x) { return Expression(x.pg, x.pg->add_function<Asinh>({x.i})); }
+ Expression acosh(const Expression& x) { return Expression(x.pg, x.pg->add_function<Acosh>({x.i})); }
+ Expression atanh(const Expression& x) { return Expression(x.pg, x.pg->add_function<Atanh>({x.i})); }
++Expression log_sigmoid(const Expression& x) { return Expression(x.pg, x.pg->add_function<LogSigmoid>({x.i})); }
+ Expression lgamma(const Expression& x) { return Expression(x.pg, x.pg->add_function<LogGamma>({x.i})); }
+ Expression log(const Expression& x) { return Expression(x.pg, x.pg->add_function<Log>({x.i})); }
+ Expression exp(const Expression& x) { return Expression(x.pg, x.pg->add_function<Exp>({x.i})); }
+diff --git a/dynet/expr.h b/dynet/expr.h
+index d7780ad0e..1b3975793 100644
+--- a/dynet/expr.h
++++ b/dynet/expr.h
+@@ -1020,6 +1020,18 @@ Expression square(const Expression& x);
+  */
+ Expression cube(const Expression& x);
+
++/**
++ * \ingroup arithmeticoperations
++ * \brief Log sigmoid
++ * \details Calculate elementwise \f$y_i = \ln(\frac{1}{1+e^{-x_i}})\f$
++ * This is more numerically stable than `log(logistic(x))`
++ *
++ * \param x The input expression
++ *
++ * \return An expression where the ith element is equal to \f$y_i = \ln(\frac{1}{1+e^{-x_i}})\f$
++ */
++Expression log_sigmoid(const Expression& x);
++
+ /**
+  * \ingroup arithmeticoperations
+  * \brief Log gamma
+diff --git a/dynet/nodes-arith-unary.cc b/dynet/nodes-arith-unary.cc
+index d13960ef0..0796b99ef 100644
+--- a/dynet/nodes-arith-unary.cc
++++ b/dynet/nodes-arith-unary.cc
+@@ -242,6 +242,40 @@ void Abs::backward_dev_impl(const MyDevice & dev,
+ }
+ DYNET_NODE_INST_DEV_IMPL(Abs)
+
++// ************* LogSigmoid *************
++
++#ifndef __CUDACC__
++
++string LogSigmoid::as_string(const vector<string>& arg_names) const {
++  ostringstream os;
++  os << "log_sigmoid(" << arg_names[0] << ')';
++  return os.str();
++}
++
++Dim LogSigmoid::dim_forward(const vector<Dim>& xs) const {
++  DYNET_ARG_CHECK(xs.size() == 1, "Failed input count check in LogSigmoid")
++  return xs[0];
++}
++
++#endif
++
++template<class MyDevice>
++void LogSigmoid::forward_dev_impl(const MyDevice & dev, const vector<const Tensor*>& xs, Tensor& fx) const {
++  tvec(fx).device(*dev.edevice) = tvec(*xs[0]).unaryExpr(scalar_log_sigmoid_forward_op<float>());
++}
++
++template<class MyDevice>
++void LogSigmoid::backward_dev_impl(const MyDevice & dev,
++                             const vector<const Tensor*>& xs,
++                             const Tensor& fx,
++                             const Tensor& dEdf,
++                             unsigned i,
++                             Tensor& dEdxi) const {
++  tvec(dEdxi).device(*dev.edevice) += tvec(fx).binaryExpr(tvec(dEdf), scalar_log_sigmoid_backward_op<float>());
++}
++DYNET_NODE_INST_DEV_IMPL(LogSigmoid)
++
++
+ // ************* LogGamma *************
+
+ #ifndef __CUDACC__
+diff --git a/dynet/nodes-arith-unary.h b/dynet/nodes-arith-unary.h
+index 8e301050f..1c966bfa8 100644
+--- a/dynet/nodes-arith-unary.h
++++ b/dynet/nodes-arith-unary.h
+@@ -69,6 +69,15 @@ struct Abs : public Node {
+   DYNET_NODE_DEFINE_DEV_IMPL()
+ };
+
++// y = log_sigmoid x_1
++struct LogSigmoid : public Node {
++  explicit LogSigmoid(const std::initializer_list<VariableIndex>& a) : Node(a) {}
++  virtual bool supports_multibatch() const override { return true; }
++  virtual int autobatch_sig(const ComputationGraph &cg, SigMap &sm) const override { Sig s(nt::logsigmoid); return sm.get_idx(s); }
++  virtual std::vector<int> autobatch_concat(const ComputationGraph & cg) const override { return std::vector<int>(1, 1); }
++  DYNET_NODE_DEFINE_DEV_IMPL()
++};
++
+ // y = lgamma x_1
+ struct LogGamma : public Node {
+   explicit LogGamma(const std::initializer_list<VariableIndex>& a) : Node(a) {}
+diff --git a/dynet/sig.h b/dynet/sig.h
+index bbc6d0ce0..acdc33d1f 100644
+--- a/dynet/sig.h
++++ b/dynet/sig.h
+@@ -13,7 +13,7 @@ namespace dynet {
+
+   namespace nt {
+     enum NodeType {
+-      tanh=1, sqrt, abs, erf, square, cube, exp, loggamma, log, nobackprop, scalegradient, identity, negate, rectify, logistic, softsign, silu,
++      tanh=1, sqrt, abs, erf, square, cube, exp, logsigmoid, loggamma, log, nobackprop, scalegradient, identity, negate, rectify, logistic, softsign, silu,
+       sinh, cosh, asinh, acosh, atanh, sin, cos, tan, asin, acos, atan, plus_const, concat, cmult, csum, sum, squared_distance, softmax, pnls, pickrange, scalar_mult,
+       input, scalar_input, lookup,
+       COMPLEX,
+diff --git a/dynet/simd-functors.h b/dynet/simd-functors.h
+index d4624ee06..9e2b66a38 100644
+--- a/dynet/simd-functors.h
++++ b/dynet/simd-functors.h
+@@ -74,12 +74,11 @@ namespace dynet {
+ template<typename Scalar> struct scalar_logistic_sigmoid_op {
+   EIGEN_EMPTY_STRUCT_CTOR(scalar_logistic_sigmoid_op)
+   DYNET_DEVICE_FUNC inline const Scalar operator() (const Scalar& x) const {
+-    using std::exp;
+     const Scalar one = Scalar(1.0);
+     if (x >= 0.0){
+-        return one / (one + exp(-x));
++        return one / (one + expf(-x));
+     }else{
+-        return exp(x) / (one + exp(x));
++        return expf(x) / (one + expf(x));
+     }
+   }
+   template <typename Packet>
+@@ -105,6 +104,78 @@ struct functor_traits<dynet::scalar_logistic_sigmoid_op<Scalar> > {
+ };
+ } }
+
++namespace dynet {
++template<typename Scalar> struct scalar_log_sigmoid_forward_op {
++  EIGEN_EMPTY_STRUCT_CTOR(scalar_log_sigmoid_forward_op)
++  DYNET_DEVICE_FUNC inline const Scalar operator() (const Scalar& x) const {
++    using std::log1pf;
++    // distinguish between positive and negative values of x for precision
++    if (x>0)
++        return -log1pf(expf(-x));
++    else
++        return x - log1pf(expf(x));
++  }
++  template <typename Packet>
++  DYNET_DEVICE_FUNC inline Packet packetOp(const Packet& x) const {
++    using namespace Eigen::internal;
++    const Packet minus_one = pset1<Packet>(-1.0);
++    // Trick to mimick a condition do the computation for both cases and take the min/max with a "pivot" value (here -1) then add. Then substract the excess -1
++    return pmin(
++            padd(
++             // Negative case (close to x)
++             pmin(
++                 minus_one,
++                 psub(x, plog1p(pexp(x)))
++                 ),
++             // Positive case (close to 0)
++             pmax(
++                 minus_one,
++                 pnegate(plog1p(pexp(pnegate(x))))
++                 )
++             ),
++            minus_one);
++  }
++};
++}
++
++namespace Eigen { namespace internal {
++template<typename Scalar>
++struct functor_traits<dynet::scalar_log_sigmoid_forward_op<Scalar> > {
++  enum {
++    Cost = NumTraits<Scalar>::AddCost *6 + NumTraits<Scalar>::MulCost * 4,
++    PacketAccess = packet_traits<Scalar>::HasAdd && packet_traits<Scalar>::HasSub &&
++                   packet_traits<Scalar>::HasMin && packet_traits<Scalar>::HasMax &&
++                   packet_traits<Scalar>::HasLog1p && packet_traits<Scalar>::HasExp &&
++                   packet_traits<Scalar>::HasNegate
++  };
++};
++} }
++
++namespace dynet {
++template<typename Scalar> struct scalar_log_sigmoid_backward_op {
++  EIGEN_EMPTY_STRUCT_CTOR(scalar_log_sigmoid_backward_op)
++  DYNET_DEVICE_FUNC EIGEN_STRONG_INLINE const Scalar operator() (const Scalar& t, const Scalar& d) const {
++    return (1 - expf(t)) * d;
++  }
++  template<typename Packet>
++  DYNET_DEVICE_FUNC EIGEN_STRONG_INLINE const Packet packetOp(const Packet& t, const Packet& d) const {
++    using namespace Eigen::internal;
++    const Packet one = pset1<Packet>(1);
++    return pmul(psub(one, pexp(t)), d);
++  }
++};
++}
++
++namespace Eigen { namespace internal {
++template<typename Scalar>
++struct functor_traits<dynet::scalar_log_sigmoid_backward_op<Scalar> > {
++  enum {
++    Cost = NumTraits<Scalar>::AddCost + 2 * NumTraits<Scalar>::MulCost,
++    PacketAccess = packet_traits<Scalar>::HasAdd && packet_traits<Scalar>::HasMul && packet_traits<Scalar>::HasExp
++  };
++};
++}}
++
+ namespace dynet {
+ template<typename Scalar> struct scalar_sqrt_backward_op {
+   EIGEN_EMPTY_STRUCT_CTOR(scalar_sqrt_backward_op)
+diff --git a/python/_dynet.pxd b/python/_dynet.pxd
+index 2f6a3b6e6..0a7d3d48c 100644
+--- a/python/_dynet.pxd
++++ b/python/_dynet.pxd
+@@ -326,6 +326,7 @@ cdef extern from "dynet/expr.h" namespace "dynet":
+     CExpression c_erf "dynet::erf" (CExpression& x) except + #
+     CExpression c_cube "dynet::cube" (CExpression& x) except + #
+     CExpression c_log "dynet::log" (CExpression& x) except + #
++    CExpression c_log_sigmoid "dynet::log_sigmoid" (CExpression& x) except + #
+     CExpression c_lgamma "dynet::lgamma" (CExpression& x) except + #
+     CExpression c_logistic "dynet::logistic" (CExpression& x) except + #
+     CExpression c_rectify "dynet::rectify" (CExpression& x) except + #
+diff --git a/python/_dynet.pyx b/python/_dynet.pyx
+index 65c4c94fb..b1b56b53e 100644
+--- a/python/_dynet.pyx
++++ b/python/_dynet.pyx
+@@ -3246,6 +3246,19 @@ cpdef Expression log(Expression x):
+         dynet.Expression: :math:`y_i = \ln(x_i)`
+     """
+     return Expression.from_cexpr(x.cg_version, c_log(x.c()))
++cpdef Expression log_sigmoid(Expression x):
++    """Log sigmoid
++
++    Calculate elementwise log gamma function :math:`y_i = \ln(\\frac{1}{1+e^{x_i}})`
++    This is more numerically stable than `log(logistic(x))`
++
++    Args:
++        x (dynet.Expression): Input expression
++
++    Returns:
++        dynet.Expression: :math:`y_i = \ln(\\frac{1}{1+e^{x_i}})`
++    """
++    return Expression.from_cexpr(x.cg_version, c_log_sigmoid(x.c()))
+ cpdef Expression lgamma(Expression x):
+     """Log gamma
+
